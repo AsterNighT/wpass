@@ -1,23 +1,26 @@
 use std::{process::Command};
 
-use crate::{password::get_password, CommandLineArgument};
+use crate::{CommandLineArgument, password::get_password};
 use anyhow::{anyhow, Result};
 use log::{debug, info};
+use rayon::prelude::*;
 
 enum ReturnCode {
     Success = 0,
     FatalError = 2,
-    Unknown = 255,
 }
 
-pub fn try_extract(options: &CommandLineArgument) -> bool {
+pub fn try_extract(options: &CommandLineArgument) -> Result<bool> {
     let password_dict = get_password(&options.password_file).expect("Cannot read passwords");
     debug!("Password list: {:?}", password_dict);
-    password_dict.into_iter().any(|password| -> bool {
-        debug!("Trying password {}", &password);
-        match try_password(options, &password) {
+    
+    let correct_password = std::sync::Mutex::new("".to_owned());
+    password_dict.par_iter().any(|password| -> bool {
+        debug!("Trying password {}", password);
+        match try_password(options, password) {
             Ok(true) => {
-                info!("Password is: {}", &password);
+                info!("Password is: {}", password);
+                *correct_password.lock().unwrap() = password.clone();
                 true
             },
             Ok(false) => false,
@@ -26,30 +29,41 @@ pub fn try_extract(options: &CommandLineArgument) -> bool {
                 false
             }
         }
-    })
+    });
+    extract(options, &correct_password.into_inner().unwrap())
 }
 
 fn try_password(options: &CommandLineArgument, password: &str) -> Result<bool> {
-    match call_7z(options, password)? {
-        ReturnCode::Success => Ok(true),
-        ReturnCode::FatalError => Ok(false),
-        _ => Err(anyhow!("Unknown return code from 7z")),
-    }
+    let mut command = Command::new(&options.executable_path);
+    command.arg("t");
+    command.arg(format!("-p{}", password));
+    command.arg(&options.file_path);
+    Ok(parse_return_code(call_7z(&mut command)?))
 }
 
-fn call_7z(options: &CommandLineArgument, password: &str) -> Result<ReturnCode> {
+fn extract(options: &CommandLineArgument, password: &str) -> Result<bool> {
     let mut command = Command::new(&options.executable_path);
     command.arg("x");
     command.arg(format!("-p{}", password));
-    command.arg("-y");
     command.arg(&options.file_path);
     command.arg(format!("-o{}",&options.output.to_str().unwrap()));
+    Ok(parse_return_code(call_7z(&mut command)?))
+}
+
+fn parse_return_code(code:ReturnCode) -> bool {
+    match code {
+        ReturnCode::Success => true,
+        _ => false,
+    }
+}
+
+fn call_7z(command:&mut Command) -> Result<ReturnCode> {
     let output = command.output()?;
     debug!("Stdout: {}", std::str::from_utf8(&output.stdout)?);
     debug!("Stderr: {}", std::str::from_utf8(&output.stderr)?);
     match output.status.code() {
         Some(0) => Ok(ReturnCode::Success),
         Some(2) => Ok(ReturnCode::FatalError),
-        _ => Ok(ReturnCode::Unknown),
+        _ => Err(anyhow!("Unknown return code from 7zip")),
     }
 }

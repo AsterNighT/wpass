@@ -30,16 +30,16 @@ pub struct CommandLineArgument {
     #[clap(short, long)]
     local: bool,
 
-    /// Always extract to a new folder, with same name as the archive file
+    /// Always extract to a new directory, with same name as the archive file
     #[clap(short, long)]
-    new_folder: bool,
+    new_directory: bool,
 
     /// Turn debugging information on
     #[clap(short, long, parse(from_occurrences))]
     debug: usize,
     
     /// Delete the original archive file after extraction succeeds.
-    #[clap(short, long)]
+    #[clap(short='D', long)]
     delete: bool,
 }
 
@@ -51,9 +51,11 @@ fn main() {
         env_logger::init();
     }
     initialize(&mut args).expect("Fail to initialize arguments");
-    let result = try_extract(&args);
-    finalize(&args).expect("Fail to finalize");
-    exit(if result {0} else {1});
+    let success = try_extract(&args).expect("Failed to extract");
+    if success {
+        finalize(&args).expect("Fail to finalize");
+    }
+    exit(if success {0} else {1});
 }
 
 fn finalize(args: &CommandLineArgument) -> Result<()> {
@@ -63,7 +65,7 @@ fn finalize(args: &CommandLineArgument) -> Result<()> {
     Ok(())
 }
 
-fn initialize(options: &mut CommandLineArgument) -> Result<()> {
+pub fn initialize(options: &mut CommandLineArgument) -> Result<()> {
     debug!("Before initialization: {:?}", options);
     if options.password_file.to_str() == Some("none") {
         options.password_file = {
@@ -99,7 +101,7 @@ fn initialize(options: &mut CommandLineArgument) -> Result<()> {
         }
     }
 
-    if options.new_folder {
+    if options.new_directory {
         match options.file_path.file_stem() {
             Some(filename) =>  options.output.push(filename),
             None => options.output.push("foobar")
