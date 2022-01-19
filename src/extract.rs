@@ -1,9 +1,10 @@
-use std::{process::Command};
+use std::{ffi::OsStr, process::Command};
 
 use crate::{CommandLineArgument, password::get_password};
 use anyhow::{anyhow, Result};
 use log::{debug, info};
 use rayon::prelude::*;
+use encoding::{DecoderTrap, Encoding, all::GBK};
 
 enum ReturnCode {
     Success = 0,
@@ -59,8 +60,13 @@ fn parse_return_code(code:ReturnCode) -> bool {
 
 fn call_7z(command:&mut Command) -> Result<ReturnCode> {
     let output = command.output()?;
-    debug!("Stdout: {}", std::str::from_utf8(&output.stdout)?);
-    debug!("Stderr: {}", std::str::from_utf8(&output.stderr)?);
+    debug!("args: {:?}",command.get_args().collect::<Vec<&OsStr>>());
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    GBK.decode_to(&output.stdout,DecoderTrap::Replace, &mut stdout).unwrap();
+    GBK.decode_to(&output.stderr,DecoderTrap::Replace, &mut stderr).unwrap();
+    debug!("Stdout: {}", stdout);
+    debug!("Stderr: {}", stderr);
     match output.status.code() {
         Some(0) => Ok(ReturnCode::Success),
         Some(2) => Ok(ReturnCode::FatalError),

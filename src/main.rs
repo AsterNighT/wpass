@@ -1,11 +1,11 @@
 mod extract;
 mod password;
 
+use anyhow::Result;
 use clap::Parser;
 use extract::try_extract;
 use log::{debug, LevelFilter};
 use std::{path::PathBuf, process::exit};
-use anyhow::Result;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -37,16 +37,22 @@ pub struct CommandLineArgument {
     /// Turn debugging information on
     #[clap(short, long, parse(from_occurrences))]
     debug: usize,
-    
+
     /// Delete the original archive file after extraction succeeds.
-    #[clap(short='D', long)]
+    #[clap(short = 'D', long)]
     delete: bool,
+}
+
+extern "C" {
+    pub fn system(command: *const u8);
 }
 
 fn main() {
     let mut args: CommandLineArgument = CommandLineArgument::parse();
-    if args.debug>= 1 {
-        env_logger::Builder::new().filter_level(LevelFilter::Debug).init();
+    if args.debug >= 1 {
+        env_logger::Builder::new()
+            .filter_level(LevelFilter::Debug)
+            .init();
     } else {
         env_logger::init();
     }
@@ -55,7 +61,7 @@ fn main() {
     if success {
         finalize(&args).expect("Fail to finalize");
     }
-    exit(if success {0} else {1});
+    exit(if success { 0 } else { 1 });
 }
 
 fn finalize(args: &CommandLineArgument) -> Result<()> {
@@ -96,15 +102,25 @@ pub fn initialize(options: &mut CommandLineArgument) -> Result<()> {
             file_dir
         };
         // This may make the output empty string. 7z will complain about it. So make it a directory.
-        if !options.output.is_dir() { 
+        if !options.output.is_dir() {
             options.output.push(".");
         }
     }
 
     if options.new_directory {
         match options.file_path.file_stem() {
-            Some(filename) =>  options.output.push(filename),
-            None => options.output.push("foobar")
+            Some(filename) => {
+                options.output.push(filename);
+                // Some times the file has no extension, in which case the directory will have the same name as the file itself, in which case the we will fail to create the directory.
+                if std::path::Path::exists(&options.output) {
+                    options.output.pop();
+                    options
+                        .output
+                        .push(format!("{}_extracted", filename.to_str().unwrap()));
+                }
+            }
+            // What the hell?
+            None => options.output.push("foobar"),
         }
     }
     debug!("After initialization: {:?}", options);

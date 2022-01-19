@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["-d", "-l", "dict.zip"],
+            "args": ["-d", "-l", "test/谔谔.zip"],
             "cwd": "${workspaceFolder}"
         },
     ]
