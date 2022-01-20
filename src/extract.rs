@@ -45,6 +45,7 @@ fn try_password(options: &CommandLineArgument, password: &str) -> Result<bool> {
 fn extract(options: &CommandLineArgument, password: &str) -> Result<bool> {
     let mut command = Command::new(&options.executable_path);
     command.arg("x");
+    command.arg("-y");
     command.arg(format!("-p{}", password));
     command.arg(&options.file_path);
     command.arg(format!("-o{}",&options.output.to_str().unwrap()));
