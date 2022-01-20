@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use extract::try_extract;
 use log::{debug, LevelFilter};
-use std::{path::PathBuf, process::exit};
+use std::{io::Write, path::PathBuf, process::exit};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -41,6 +41,10 @@ pub struct CommandLineArgument {
     /// Delete the original archive file after extraction succeeds.
     #[clap(short = 'D', long)]
     delete: bool,
+
+    /// Generate reg file for windows context menu. With this option enabled the program will not try to extract file, but you still need to provide an arbitrary file name.
+    #[clap(short, long)]
+    generate: bool,
 }
 
 extern "C" {
@@ -56,12 +60,64 @@ fn main() {
     } else {
         env_logger::init();
     }
+    if args.generate {
+        generate_reg();
+        exit(0);
+    }
     initialize(&mut args).expect("Fail to initialize arguments");
     let success = try_extract(&args).expect("Failed to extract");
     if success {
         finalize(&args).expect("Fail to finalize");
     }
     exit(if success { 0 } else { 1 });
+}
+
+fn generate_reg() -> () {
+    let reg_file_content = format!(
+        r#"Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\*\shell\Item0]
+"MUIVerb"="Extract with wpass"
+"SubCommands"=""
+"OnlyInBrowserWindow"=""
+
+[HOKEY_CLASSES_ROOT\*\shell\Item0\shell]
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item0]
+"MUIVerb"="Extract to current directory"
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item0\command]
+@="{path} -l \"%1\""
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item1]
+"MUIVerb"="Extract to new directory"
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item1\command]
+@="{path} -l -n \"%1\""
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item2]
+"MUIVerb"="Extract to current directory(with debug output)"
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item2\command]
+@="{path} -n -d -l \"%1\""
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item3]
+"MUIVerb"="Extract to current directory and delete the archive file"
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item3\command]
+@="{path} -l -D \"%1\""
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item4]
+"MUIVerb"="Extract to new directory and delete the archive file"
+
+[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item4\command]
+@="{path} -l -D -n \"%1\"""#,
+        path = std::env::current_exe().unwrap().to_str().unwrap()
+    );
+    let mut reg_file = std::fs::File::create("wpass.reg").expect("Failed to create reg file");
+    reg_file
+        .write(reg_file_content.as_bytes())
+        .expect("Failed to write reg file");
 }
 
 fn finalize(args: &CommandLineArgument) -> Result<()> {
