@@ -3,9 +3,10 @@ mod password;
 
 use anyhow::Result;
 use clap::Parser;
+use config::Config;
 use extract::try_extract;
 use log::{debug, LevelFilter};
-use std::{io::Write, path::PathBuf, process::exit};
+use std::{collections::HashMap, io::Write, path::{PathBuf}, process::exit};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -52,6 +53,15 @@ extern "C" {
 }
 
 fn main() {
+    let mut config = Config::default();
+    let mut config_path = std::env::current_exe().unwrap();
+    config_path.pop();
+    config_path.push("config.toml");
+    config
+        .merge(config::File::with_name(config_path.to_str().unwrap())).unwrap();
+    let config = config
+            .try_into::<HashMap<String, String>>()
+            .unwrap();
     let mut args: CommandLineArgument = CommandLineArgument::parse();
     if args.debug >= 1 {
         env_logger::Builder::new()
@@ -64,7 +74,7 @@ fn main() {
         generate_reg();
         exit(0);
     }
-    initialize(&mut args).expect("Fail to initialize arguments");
+    initialize(&mut args, &config).expect("Fail to initialize arguments");
     let success = try_extract(&args).expect("Failed to extract");
     if success {
         finalize(&args).expect("Fail to finalize");
@@ -134,23 +144,34 @@ fn finalize(args: &CommandLineArgument) -> Result<()> {
     Ok(())
 }
 
-pub fn initialize(options: &mut CommandLineArgument) -> Result<()> {
+pub fn initialize(options: &mut CommandLineArgument, config:&HashMap<String, String>) -> Result<()> {
+    debug!("Read config: {:?}", config);
     debug!("Before initialization: {:?}", options);
     if options.password_file.to_str() == Some("none") {
         options.password_file = {
-            let mut path = std::env::current_exe().expect("Cannot get exe path");
-            path.pop();
-            path.push("dict.txt");
-            path
+            let config_path = PathBuf::from(&config["password_dict"]);
+            if config_path.is_absolute() {
+                config_path
+            } else { 
+                let mut path = std::env::current_exe().expect("Cannot get exe path");
+                path.pop();
+                path.push(config_path);
+                path
+            }
         }
     }
 
     if options.executable_path.to_str() == Some("none") {
         options.executable_path = {
-            let mut path = std::env::current_exe().expect("Cannot get exe path");
-            path.pop();
-            path.push("7za.exe");
-            path
+            let config_path = PathBuf::from(&config["executable_path"]);
+            if config_path.is_absolute() {
+                config_path
+            } else { 
+                let mut path = std::env::current_exe().expect("Cannot get exe path");
+                path.pop();
+                path.push(config_path);
+                path
+            }
         }
     }
 
