@@ -69,6 +69,13 @@ fn main() {
     if success {
         finalize(&args).expect("Fail to finalize");
     }
+    // System("pause")
+    if args.debug >= 1 {
+        let mut stdout = std::io::stdout();
+        stdout.write(b"Press Enter to continue...").unwrap();
+        stdout.flush().unwrap();
+        std::io::Read::read(&mut std::io::stdin(), &mut [0]).unwrap();
+    }
     exit(if success { 0 } else { 1 });
 }
 
