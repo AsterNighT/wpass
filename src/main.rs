@@ -46,6 +46,10 @@ pub struct CommandLineArgument {
     /// Generate reg file for windows context menu. With this option enabled the program will not try to extract file, but you still need to provide an arbitrary file name.
     #[clap(short, long)]
     generate: bool,
+
+    /// Format the password file after everything. Sort passwords and deduplicate them. Enabled by default.
+    #[clap(short, long)]
+    format: bool,
 }
 
 extern "C" {
@@ -63,7 +67,7 @@ fn main() {
             .try_into::<HashMap<String, String>>()
             .unwrap();
     let mut args: CommandLineArgument = CommandLineArgument::parse();
-    if args.debug >= 1 {
+    if args.debug >= 0 {
         env_logger::Builder::new()
             .filter_level(LevelFilter::Debug)
             .init();
@@ -80,7 +84,7 @@ fn main() {
         finalize(&args).expect("Fail to finalize");
     }
     // System("pause")
-    if args.debug >= 1 {
+    if args.debug >= 1 || !success {
         let mut stdout = std::io::stdout();
         stdout.write(b"Press Enter to continue...").unwrap();
         stdout.flush().unwrap();
@@ -93,41 +97,41 @@ fn generate_reg() -> () {
     let reg_file_content = format!(
         r#"Windows Registry Editor Version 5.00
 
-[HKEY_CLASSES_ROOT\*\shell\Item0]
+[HKEY_CLASSES_ROOT\*\shell\WPass]
 "MUIVerb"="Extract with wpass"
 "SubCommands"=""
 "OnlyInBrowserWindow"=""
 
-[HOKEY_CLASSES_ROOT\*\shell\Item0\shell]
+[HOKEY_CLASSES_ROOT\*\shell\WPass\shell]
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item0]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item0]
 "MUIVerb"="Extract to current directory"
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item0\command]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item0\command]
 @="{path} -l \"%1\""
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item1]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item1]
 "MUIVerb"="Extract to new directory"
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item1\command]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item1\command]
 @="{path} -l -n \"%1\""
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item2]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item2]
 "MUIVerb"="Extract to current directory(with debug output)"
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item2\command]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item2\command]
 @="{path} -n -d -l \"%1\""
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item3]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item3]
 "MUIVerb"="Extract to current directory and delete the archive file"
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item3\command]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item3\command]
 @="{path} -l -D \"%1\""
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item4]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item4]
 "MUIVerb"="Extract to new directory and delete the archive file"
 
-[HKEY_CLASSES_ROOT\*\shell\Item0\shell\Item4\command]
+[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item4\command]
 @="{path} -l -D -n \"%1\"""#,
         path = std::env::current_exe().unwrap().to_str().unwrap()
     );
@@ -140,6 +144,9 @@ fn generate_reg() -> () {
 fn finalize(args: &CommandLineArgument) -> Result<()> {
     if args.delete {
         std::fs::remove_file(&args.file_path)?;
+    }
+    if args.format {
+        password::format_password_file(&args.password_file)?;
     }
     Ok(())
 }
