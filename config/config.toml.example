@@ -2,4 +2,4 @@
 executable_path="7za.exe"
 
 # Default password dictionary, can be either absolute path or relative path to wpass.exe
-password_dict="dict.txt"
+password_file="dict.txt"
