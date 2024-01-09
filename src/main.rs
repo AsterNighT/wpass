@@ -1,31 +1,33 @@
-mod extract;
-mod password;
+use std::{io::Write, path::PathBuf, process::exit};
 
 use anyhow::Result;
 use clap::Parser;
 use config::Config;
-use extract::try_extract;
 use log::{debug, LevelFilter};
-use std::{collections::HashMap, io::Write, path::{PathBuf}, process::exit};
+use serde::Deserialize;
+use wpass::{
+    hack::{format_password_file, generate_reg},
+    WPass, WPassInstance,
+};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-pub struct CommandLineArgument {
+pub struct CmdArgument {
     /// Archive file path
     #[clap(parse(from_os_str))]
     file_path: PathBuf,
 
     /// Password file path, use default password file if not set
-    #[clap(short, long, parse(from_os_str), default_value = "none")]
-    password_file: PathBuf,
+    #[clap(short, long, parse(from_os_str))]
+    password_file: Option<PathBuf>,
 
     /// Path to 7z.exe or 7za.exe, use default 7za.exe if not set
-    #[clap(short, long, parse(from_os_str), default_value = "none")]
-    executable_path: PathBuf,
+    #[clap(short, long, parse(from_os_str))]
+    executable_path: Option<PathBuf>,
 
     /// Extraction destination, use current directory if not set
-    #[clap(short, long, parse(from_os_str), default_value = "none")]
-    output: PathBuf,
+    #[clap(short, long, parse(from_os_str))]
+    output: Option<PathBuf>,
 
     /// Extract to the same directory of archive file, overwrites the -o option
     #[clap(short, long)]
@@ -52,168 +54,174 @@ pub struct CommandLineArgument {
     format: bool,
 }
 
-extern "C" {
-    pub fn system(command: *const u8);
+#[derive(Debug)]
+pub struct CmdArgumentMerged {
+    /// Archive file path
+    file_path: PathBuf,
+
+    /// Password file path, use default password file if not set
+    password_file: PathBuf,
+
+    /// Path to 7z.exe or 7za.exe, use default 7za.exe if not set
+    executable_path: PathBuf,
+
+    /// Extraction destination, use current directory if not set
+    output: PathBuf,
+
+    /// Extract to the same directory of archive file, overwrites the -o option
+    local: bool,
+
+    /// Always extract to a new directory, with same name as the archive file
+    new_directory: bool,
+
+    /// Turn debugging information on
+    debug: usize,
+
+    /// Delete the original archive file after extraction succeeds.
+    delete: bool,
+
+    /// Generate reg file for windows context menu. With this option enabled the program will not try to extract file, but you still need to provide an arbitrary file name.
+    generate: bool,
+
+    /// Format the password file after everything. Sort passwords and deduplicate them. Enabled by default.
+    format: bool,
 }
 
-fn main() {
+#[derive(Debug, Deserialize)]
+pub struct WPassDefaultConfig {
+    executable_path: PathBuf,
+    password_file: PathBuf,
+}
+
+fn main() -> Result<()> {
     let mut config = Config::default();
     let mut config_path = std::env::current_exe().unwrap();
     config_path.pop();
     config_path.push("config.toml");
     config
-        .merge(config::File::with_name(config_path.to_str().unwrap())).unwrap();
-    let config = config
-            .try_into::<HashMap<String, String>>()
-            .unwrap();
-    let mut args: CommandLineArgument = CommandLineArgument::parse();
-    if args.debug >= 0 {
+        .merge(config::File::with_name(config_path.to_str().unwrap()))
+        .unwrap();
+    let config = config.try_into::<WPassDefaultConfig>().unwrap();
+    let args = CmdArgument::parse();
+    if args.debug > 0 {
         env_logger::Builder::new()
             .filter_level(LevelFilter::Debug)
             .init();
     } else {
         env_logger::init();
     }
-    if args.generate {
-        generate_reg();
-        exit(0);
-    }
-    initialize(&mut args, &config).expect("Fail to initialize arguments");
-    let success = try_extract(&args).expect("Failed to extract");
+    let (merged_args, wpass_instance) = initialize(args, config)?;
+    // After initialize args should not contain any None
+    let success = wpass(&wpass_instance, &merged_args)?;
     if success {
-        finalize(&args).expect("Fail to finalize");
+        finalize(&merged_args).expect("Fail to finalize");
     }
     // System("pause")
-    if args.debug >= 1 || !success {
+    if merged_args.debug >= 1 || !success {
         let mut stdout = std::io::stdout();
         stdout.write(b"Press Enter to continue...").unwrap();
         stdout.flush().unwrap();
         std::io::Read::read(&mut std::io::stdin(), &mut [0]).unwrap();
     }
-    exit(if success { 0 } else { 1 });
-}
-
-fn generate_reg() -> () {
-    let reg_file_content = format!(
-        r#"Windows Registry Editor Version 5.00
-
-[HKEY_CLASSES_ROOT\*\shell\WPass]
-"MUIVerb"="Extract with wpass"
-"SubCommands"=""
-"OnlyInBrowserWindow"=""
-
-[HOKEY_CLASSES_ROOT\*\shell\WPass\shell]
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item0]
-"MUIVerb"="Extract to current directory"
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item0\command]
-@="{path} -l \"%1\""
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item1]
-"MUIVerb"="Extract to new directory"
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item1\command]
-@="{path} -l -n \"%1\""
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item2]
-"MUIVerb"="Extract to current directory(with debug output)"
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item2\command]
-@="{path} -n -d -l \"%1\""
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item3]
-"MUIVerb"="Extract to current directory and delete the archive file"
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item3\command]
-@="{path} -l -D \"%1\""
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item4]
-"MUIVerb"="Extract to new directory and delete the archive file"
-
-[HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item4\command]
-@="{path} -l -D -n \"%1\"""#,
-        path = std::env::current_exe().unwrap().to_str().unwrap()
-    );
-    let mut reg_file = std::fs::File::create("wpass.reg").expect("Failed to create reg file");
-    reg_file
-        .write(reg_file_content.as_bytes())
-        .expect("Failed to write reg file");
-}
-
-fn finalize(args: &CommandLineArgument) -> Result<()> {
-    if args.delete {
-        std::fs::remove_file(&args.file_path)?;
-    }
-    if args.format {
-        password::format_password_file(&args.password_file)?;
-    }
     Ok(())
 }
 
-pub fn initialize(options: &mut CommandLineArgument, config:&HashMap<String, String>) -> Result<()> {
+pub fn initialize(
+    options: CmdArgument,
+    config: WPassDefaultConfig,
+) -> Result<(CmdArgumentMerged, WPassInstance)> {
+    // These unwraps really sucks.
     debug!("Read config: {:?}", config);
     debug!("Before initialization: {:?}", options);
-    if options.password_file.to_str() == Some("none") {
-        options.password_file = {
-            let config_path = PathBuf::from(&config["password_dict"]);
+    let mut args_merged: CmdArgumentMerged = CmdArgumentMerged {
+        file_path: options.file_path.clone(),
+        password_file: options.password_file.unwrap_or({
+            let config_path = PathBuf::from(&config.password_file);
             if config_path.is_absolute() {
                 config_path
-            } else { 
+            } else {
                 let mut path = std::env::current_exe().expect("Cannot get exe path");
                 path.pop();
                 path.push(config_path);
                 path
             }
-        }
-    }
-
-    if options.executable_path.to_str() == Some("none") {
-        options.executable_path = {
-            let config_path = PathBuf::from(&config["executable_path"]);
+        }),
+        executable_path: options.executable_path.unwrap_or({
+            let config_path = PathBuf::from(&config.executable_path);
             if config_path.is_absolute() {
                 config_path
-            } else { 
+            } else {
                 let mut path = std::env::current_exe().expect("Cannot get exe path");
                 path.pop();
                 path.push(config_path);
                 path
             }
-        }
-    }
+        }),
+        output: options.output.unwrap_or(std::env::current_dir()?),
+        local: options.local,
+        new_directory: options.new_directory,
+        debug: options.debug,
+        delete: options.delete,
+        generate: options.generate,
+        format: options.format,
+    };
 
-    if options.output.to_str() == Some("none") {
-        options.output = std::env::current_dir()?;
-    }
-
-    if options.local {
-        options.output = {
-            let mut file_dir = options.file_path.clone();
+    if args_merged.local {
+        args_merged.output = {
+            let mut file_dir = args_merged.file_path.clone();
             file_dir.pop();
             file_dir
         };
         // This may make the output empty string. 7z will complain about it. So make it a directory.
-        if !options.output.is_dir() {
-            options.output.push(".");
+        if !args_merged.output.is_dir() {
+            args_merged.output.push(".");
+            assert!(args_merged.output.is_dir());
         }
     }
 
-    if options.new_directory {
-        match options.file_path.file_stem() {
+    if args_merged.new_directory {
+        match args_merged.file_path.file_stem() {
             Some(filename) => {
-                options.output.push(filename);
-                // Some times the file has no extension, in which case the directory will have the same name as the file itself, in which case the we will fail to create the directory.
-                if std::path::Path::exists(&options.output) {
-                    options.output.pop();
-                    options
+                args_merged.output.push(filename);
+                // Some times the file has no extension, in which case the directory will have the same name as the file itself, we will fail to create the directory.
+                if std::path::Path::exists(&args_merged.output) {
+                    args_merged.output.pop();
+                    args_merged
                         .output
                         .push(format!("{}_extracted", filename.to_str().unwrap()));
                 }
             }
             // What the hell?
-            None => options.output.push("foobar"),
+            None => args_merged.output.push("foobar"),
         }
     }
-    debug!("After initialization: {:?}", options);
+    debug!("After initialization: {:?}", args_merged);
+    let wpass = WPassInstance::new(
+        args_merged.password_file.clone(),
+        args_merged.executable_path.clone(),
+    );
+    Ok((args_merged, wpass))
+}
+
+fn wpass(wpass: &WPassInstance, args: &CmdArgumentMerged) -> Result<bool> {
+    if args.generate {
+        if cfg!(windows) {
+            generate_reg("wpass.reg");
+            exit(0);
+        } else {
+            println!("Register is only available on Windows");
+            exit(1);
+        }
+    }
+    wpass.try_extract(&args.file_path, &args.output)
+}
+
+fn finalize(args: &CmdArgumentMerged) -> Result<()> {
+    if args.delete {
+        std::fs::remove_file(&args.file_path)?;
+    }
+    if args.format {
+        format_password_file(&args.password_file)?;
+    }
     Ok(())
 }

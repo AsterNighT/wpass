@@ -3,6 +3,15 @@ name = "wpass"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "wpass"
+path = "lib/lib.rs"
+edition = "2021"
+
+[[bin]]
+name = "wpass"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -13,3 +22,4 @@ env_logger = "0.8.4"
 rayon = "1.5"
 encoding = "0.2"
 config = {version = "0.11", features = ["toml"]}
+serde = {version = "1.0", features = ["derive"]}
