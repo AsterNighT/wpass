@@ -1,8 +1,25 @@
-# WPASS: 密码是啥来着
-wpass 帮你在密码本中找到正确的一个，再也不用翻历史记录找密码了。
+# WPass: What is the password?
 
-密码以文本形式记录在 `dict.txt` 中，具体使用方式可以执行 `wpass -h` 查看。
+`WPass` is a simple library that makes calls to `7z` to try to extract a password-protected archive. You provide a possible dict file for `WPass`, `WPass` tests each password in the dict file against the archive. If the password is correct, `WPass` will extract the archive to the specified directory.
 
-你可以使用 `install.bat` 将wpass安装至右键菜单中。
+## Why `WPass`?
 
-你可以修改 `config.toml` 中的项目来调整 wpass 的配置，包括默认使用的解压软件和字典位置。使用7z而非7za可以解压更多种压缩文件（例如 rar）。
+This is meant to be the minimal interface on top of `7z`. It is meant to be small, simple but easy to use. Mainly it is implemented for my own convenience, but I hope it can be useful to others as well.
+
+## Extra interface to `WPass`
+
+Of course a mere rust library is of no use at all. This repository contains a small cli wrapper on `WPass`. If you want a GUI you can go to [`WPass-gui`](https://github.com/asternight/wpass-gui).
+
+## Planned features
+
+- Find all volumes for one archive
+
+## Some design choices
+
+> Why not just use `7z` directly?
+
+Of course, it is possible, to combine 7z and some bash scripting. But it prevents further development. I'm not sure how to wrap GUI around bash scripts.
+
+> OK, then why don't you get away from `7z` and use something like `libarchive` or `compress-tools`?
+
+`libarchive` and `compress-tools` are both cool. But since I'm mainly using `WPass` on Windows I found these libraries rather hard to use. You can see in the code there are quite some windows specific code. While I'm trying to get rid of these code I'm not really motivated to do so. So the library stuck in a delicate balance between bash script and `libarchive`. (You don't really run bash script on Windows, do you?)

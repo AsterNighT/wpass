@@ -1,3 +1,4 @@
+mod hack;
 use std::{io::Write, path::PathBuf, process::exit};
 
 use anyhow::Result;
@@ -7,7 +8,6 @@ use log::{debug, LevelFilter};
 use serde::Deserialize;
 use wpass::{
     get_password,
-    hack::{format_password_file, generate_reg},
     WPass, WPassInstance,
 };
 
@@ -207,7 +207,7 @@ pub fn initialize(
 fn wpass(wpass: &WPassInstance, args: &CmdArgumentMerged) -> Result<bool> {
     if args.generate {
         if cfg!(windows) {
-            generate_reg("wpass.reg");
+            hack::generate_reg("wpass.reg");
             exit(0);
         } else {
             println!("Register is only available on Windows");
@@ -222,7 +222,7 @@ fn finalize(args: &CmdArgumentMerged) -> Result<()> {
         std::fs::remove_file(&args.file_path)?;
     }
     if args.format {
-        format_password_file(&args.password_file)?;
+        hack::format_password_file(&args.password_file)?;
     }
     Ok(())
 }

@@ -1,5 +1,4 @@
 mod extract;
-pub mod hack;
 mod password;
 
 use anyhow::Result;
