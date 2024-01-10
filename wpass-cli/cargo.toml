@@ -1,0 +1,14 @@
+[package]
+name = "wpass-cli" # the name of the package
+version = "0.1.0"    # the current version, obeying semver
+edition = "2021"     # the edition, will have no effect on a resolver used in the workspace
+authors = ["AsterNight <asternight@outlook.com>"]
+
+[dependencies]
+wpass = { path = "../" }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.10.1"
+config = {version = "0.13", features = ["toml"]}
+serde = {version = "1.0", features = ["derive"]}

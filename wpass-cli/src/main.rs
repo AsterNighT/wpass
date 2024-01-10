@@ -6,6 +6,7 @@ use config::Config;
 use log::{debug, LevelFilter};
 use serde::Deserialize;
 use wpass::{
+    get_password,
     hack::{format_password_file, generate_reg},
     WPass, WPassInstance,
 };
@@ -14,19 +15,19 @@ use wpass::{
 #[clap(author, version, about, long_about = None)]
 pub struct CmdArgument {
     /// Archive file path
-    #[clap(parse(from_os_str))]
+    #[clap()]
     file_path: PathBuf,
 
     /// Password file path, use default password file if not set
-    #[clap(short, long, parse(from_os_str))]
+    #[clap(short, long)]
     password_file: Option<PathBuf>,
 
     /// Path to 7z.exe or 7za.exe, use default 7za.exe if not set
-    #[clap(short, long, parse(from_os_str))]
+    #[clap(short, long)]
     executable_path: Option<PathBuf>,
 
     /// Extraction destination, use current directory if not set
-    #[clap(short, long, parse(from_os_str))]
+    #[clap(short, long)]
     output: Option<PathBuf>,
 
     /// Extract to the same directory of archive file, overwrites the -o option
@@ -38,7 +39,7 @@ pub struct CmdArgument {
     new_directory: bool,
 
     /// Turn debugging information on
-    #[clap(short, long, parse(from_occurrences))]
+    #[clap(short, long, action = clap::ArgAction::Count)]
     debug: usize,
 
     /// Delete the original archive file after extraction succeeds.
@@ -94,14 +95,14 @@ pub struct WPassDefaultConfig {
 }
 
 fn main() -> Result<()> {
-    let mut config = Config::default();
     let mut config_path = std::env::current_exe().unwrap();
     config_path.pop();
     config_path.push("config.toml");
-    config
-        .merge(config::File::with_name(config_path.to_str().unwrap()))
+    let config = Config::builder()
+        .add_source(config::File::with_name(config_path.to_str().unwrap()))
+        .build()
         .unwrap();
-    let config = config.try_into::<WPassDefaultConfig>().unwrap();
+    let config: WPassDefaultConfig = config.try_deserialize().unwrap();
     let args = CmdArgument::parse();
     if args.debug > 0 {
         env_logger::Builder::new()
@@ -197,7 +198,7 @@ pub fn initialize(
     }
     debug!("After initialization: {:?}", args_merged);
     let wpass = WPassInstance::new(
-        args_merged.password_file.clone(),
+        get_password(&args_merged.password_file)?,
         args_merged.executable_path.clone(),
     );
     Ok((args_merged, wpass))

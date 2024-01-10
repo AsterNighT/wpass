@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, path::PathBuf, process::Command};
 
-use crate::{password::get_password, WPass};
+use crate::{password::PasswordDict, WPass};
 use anyhow::{anyhow, Result};
 use encoding::{all::GBK, decode, DecoderTrap};
 use log::{debug, info};
@@ -13,17 +13,17 @@ enum ReturnCode {
 
 #[derive(Debug)]
 pub struct WPassInstance {
-    /// Password file path, use default password file if not set
-    password_file: PathBuf,
+    /// Possible passwords
+    password_dict: PasswordDict,
 
     /// Path to 7z.exe or 7za.exe, use default 7za.exe if not set
     executable_path: PathBuf,
 }
 
 impl WPassInstance {
-    pub fn new(password_file: PathBuf, executable_path: PathBuf) -> Self {
+    pub fn new(password_dict: PasswordDict, executable_path: PathBuf) -> Self {
         Self {
-            password_file,
+            password_dict,
             executable_path,
         }
     }
@@ -49,10 +49,9 @@ impl WPassInstance {
 
 impl WPass for WPassInstance {
     fn try_extract(&self, target: &PathBuf, output: &PathBuf) -> Result<bool> {
-        let password_dict = get_password(&self.password_file).expect("Cannot read passwords");
-        debug!("Password list: {:?}", password_dict);
+        debug!("Password list: {:?}", self.password_dict);
 
-        let password = password_dict.par_iter().find_any(|password| -> bool {
+        let password = self.password_dict.par_iter().find_any(|password| -> bool {
             debug!("Trying password {}", password);
             match self.try_password(&target, password) {
                 Ok(true) => {
@@ -95,8 +94,13 @@ fn call_7z(command: &mut Command) -> Result<ReturnCode> {
     //     .unwrap();
     // GBK.decode_to(&output.stderr, DecoderTrap::Replace, &mut stderr)
     //     .unwrap();
-    debug!("Stdout: {}", stdout);
-    debug!("Stderr: {}", stderr);
+    if output.status.code() != Some(0) {
+        log::error!("Stdout: {}", stdout);
+        log::error!("Stderr: {}", stderr);
+    } else {
+        log::debug!("Stdout: {}", stdout);
+        log::debug!("Stderr: {}", stderr);
+    }
     match output.status.code() {
         Some(0) => Ok(ReturnCode::Success),
         Some(2) => Ok(ReturnCode::FatalError),

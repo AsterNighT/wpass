@@ -49,6 +49,10 @@ pub fn generate_reg<P:AsRef<Path>>(file_to_write: P) -> () {
         .expect("Failed to write reg file");
 }
 
+/// It seems to be a very bad idea to put this function at this level
+/// The reasons are:
+/// 1. WPass should be a simple tool. It does one thing merely: accept parameters, and extract files.
+/// 2. In practice there could be multiple instance of WPass. It doesn't make sense to call this multiple times.
 pub fn format_password_file(file_path: &PathBuf) -> Result<()>{
     let contents = fs::read_to_string(file_path)?;
     let lines = contents.split("\n");

@@ -2,24 +2,15 @@
 name = "wpass"
 version = "0.1.0"
 edition = "2021"
+authors = ["AsterNight <asternight@outlook.com>"]
 
-[lib]
-name = "wpass"
-path = "lib/lib.rs"
-edition = "2021"
-
-[[bin]]
-name = "wpass"
-path = "src/main.rs"
-
+[workspace]
+members = ["wpass-cli"]
+resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "3.0.7", features = ["derive"] }
 anyhow = "1.0"
 log = "0.4"
-env_logger = "0.8.4"
 rayon = "1.5"
 encoding = "0.2"
-config = {version = "0.11", features = ["toml"]}
-serde = {version = "1.0", features = ["derive"]}
