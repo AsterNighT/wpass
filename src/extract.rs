@@ -48,9 +48,11 @@ impl WPassInstance {
 }
 
 impl WPass for WPassInstance {
-    fn try_extract(&self, target: &PathBuf, output: &PathBuf) -> Result<bool> {
+    fn try_extract(&self, target: &PathBuf, output: &PathBuf) -> Result<Vec<PathBuf>> {
         debug!("Password list: {:?}", self.password_dict);
-
+        let archives = find_all_volumes(target);
+        debug!("Archives: {:?}", archives);
+        let target = archives.first().unwrap();
         let password = self.password_dict.par_iter().find_any(|password| -> bool {
             debug!("Trying password {}", password);
             match self.try_password(&target, password) {
@@ -66,7 +68,14 @@ impl WPass for WPassInstance {
             }
         });
         if let Some(password) = password {
-            self.extract(target, output, password)
+            match self.extract(target, output, password) {
+                Ok(true) => {
+                    info!("Successfully extracted");
+                    Ok(archives)
+                }
+                Ok(false) => Err(anyhow!("Cannot extract with correct password")),
+                Err(e) => Err(e),
+            }
         } else {
             Err(anyhow!("Cannot find correct password"))
         }
@@ -106,4 +115,28 @@ fn call_7z(command: &mut Command) -> Result<ReturnCode> {
         Some(2) => Ok(ReturnCode::FatalError),
         _ => Err(anyhow!("Unknown return code from 7zip")),
     }
+}
+
+/// Surprisingly, after a thorough search, I cannot find a library to do one simple thing:
+/// Finding all relevant volumes of one multipart archive.
+/// I guess I have to do it myself.
+/// Put it here because this seems quite useful for any interface.
+/// The returned vector should be sorted in order. Which means the first element is the first volume.
+/// And it is the first volume should be fed to 7z
+/// If there is nothing we could find just return what is provided.
+pub fn find_all_volumes(volume: &PathBuf) -> Vec<PathBuf> {
+    let dir = volume.parent().unwrap();
+    let base_name = volume.file_stem().unwrap();
+    let files = std::fs::read_dir(dir).unwrap();
+    let mut result:Vec<_> = files.filter_map(|entry| {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() && path.file_stem().unwrap() == base_name {
+                return Some(path);
+            }
+        }
+        None
+    }).collect();
+    result.sort();
+    result
 }

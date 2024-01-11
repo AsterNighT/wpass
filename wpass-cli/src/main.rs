@@ -6,10 +6,7 @@ use clap::Parser;
 use config::Config;
 use log::{debug, LevelFilter};
 use serde::Deserialize;
-use wpass::{
-    get_password,
-    WPass, WPassInstance,
-};
+use wpass::{get_password, WPass, WPassInstance};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -113,17 +110,8 @@ fn main() -> Result<()> {
     }
     let (merged_args, wpass_instance) = initialize(args, config)?;
     // After initialize args should not contain any None
-    let success = wpass(&wpass_instance, &merged_args)?;
-    if success {
-        finalize(&merged_args).expect("Fail to finalize");
-    }
-    // System("pause")
-    if merged_args.debug >= 1 || !success {
-        let mut stdout = std::io::stdout();
-        stdout.write(b"Press Enter to continue...").unwrap();
-        stdout.flush().unwrap();
-        std::io::Read::read(&mut std::io::stdin(), &mut [0]).unwrap();
-    }
+    let extracted_archives = wpass(&wpass_instance, &merged_args)?;
+    finalize(&merged_args, &extracted_archives).expect("Fail to finalize");
     Ok(())
 }
 
@@ -204,7 +192,7 @@ pub fn initialize(
     Ok((args_merged, wpass))
 }
 
-fn wpass(wpass: &WPassInstance, args: &CmdArgumentMerged) -> Result<bool> {
+fn wpass(wpass: &WPassInstance, args: &CmdArgumentMerged) -> Result<Vec<PathBuf>> {
     if args.generate {
         if cfg!(windows) {
             hack::generate_reg("wpass.reg");
@@ -217,9 +205,9 @@ fn wpass(wpass: &WPassInstance, args: &CmdArgumentMerged) -> Result<bool> {
     wpass.try_extract(&args.file_path, &args.output)
 }
 
-fn finalize(args: &CmdArgumentMerged) -> Result<()> {
+fn finalize(args: &CmdArgumentMerged, extracted_archives:&Vec<PathBuf>) -> Result<()> {
     if args.delete {
-        std::fs::remove_file(&args.file_path)?;
+        extracted_archives.iter().try_for_each(std::fs::remove_file)?;
     }
     if args.format {
         hack::format_password_file(&args.password_file)?;
