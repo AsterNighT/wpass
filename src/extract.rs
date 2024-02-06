@@ -133,7 +133,7 @@ pub fn find_all_volumes(volume: &PathBuf) -> Vec<PathBuf> {
     let files = std::fs::read_dir(dir).unwrap();
     let mut result:Vec<_> = files.filter_map(|entry| {
         if let Ok(entry) = entry {
-            entry.metadata()
+            // entry.metadata()
             let path = entry.path();
             if path.is_file() && path.file_stem().unwrap() == base_name {
                 return Some(path);
