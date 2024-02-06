@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use encoding::{all::GBK, decode, DecoderTrap};
 use log::{debug, info};
 use rayon::prelude::*;
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 enum ReturnCode {
     Success = 0,
@@ -90,6 +91,8 @@ fn parse_return_code(code: ReturnCode) -> bool {
 }
 
 fn call_7z(command: &mut Command) -> Result<ReturnCode> {
+    #[cfg(not(debug_assertions))]
+    command.creation_flags(DETACHED_PROCESS);
     let output = command.output()?;
     debug!("args: {:?}", command.get_args().collect::<Vec<&OsStr>>());
 
@@ -130,6 +133,7 @@ pub fn find_all_volumes(volume: &PathBuf) -> Vec<PathBuf> {
     let files = std::fs::read_dir(dir).unwrap();
     let mut result:Vec<_> = files.filter_map(|entry| {
         if let Ok(entry) = entry {
+            entry.metadata()
             let path = entry.path();
             if path.is_file() && path.file_stem().unwrap() == base_name {
                 return Some(path);
