@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::PathBuf, process::Command};
+use std::{ffi::OsStr, os::windows::process::CommandExt, path::PathBuf, process::Command};
 
 use crate::{password::PasswordDict, WPass};
 use anyhow::{anyhow, Result};
@@ -92,7 +92,7 @@ fn parse_return_code(code: ReturnCode) -> bool {
 
 fn call_7z(command: &mut Command) -> Result<ReturnCode> {
     #[cfg(not(debug_assertions))]
-    command.creation_flags(DETACHED_PROCESS);
+    command.creation_flags(CREATE_NO_WINDOW);
     let output = command.output()?;
     debug!("args: {:?}", command.get_args().collect::<Vec<&OsStr>>());
 
