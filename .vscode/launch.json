@@ -11,15 +11,15 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=wpass",
-                    "--package=wpass"
+                    "--bin=wpass-cli",
+                    "--package=wpass-cli"
                 ],
                 "filter": {
-                    "name": "wpass",
+                    "name": "wpass-cli",
                     "kind": "bin"
                 }
             },
-            "args": ["-d", "-l", "test/谔谔.zip"],
+            "args": ["-l", "test/test.zip"],
             "cwd": "${workspaceFolder}"
         },
     ]

@@ -9,8 +9,13 @@ members = ["wpass-cli"]
 resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+slient = []
+
 [dependencies]
 anyhow = "1.0"
 log = "0.4"
 rayon = "1.5"
 encoding = "0.2"
+regex = "1.10.4"
+wait-timeout = "0.2.0"

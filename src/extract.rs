@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, os::windows::process::CommandExt, path::PathBuf, process::Command};
 
-use crate::{password::PasswordDict, WPass};
+use crate::{password::PasswordDict, TestResult, WPass};
 use anyhow::{anyhow, Result};
 use encoding::{all::GBK, decode, DecoderTrap};
 use log::{debug, info};
@@ -12,7 +12,13 @@ enum ReturnCode {
     FatalError = 2,
 }
 
-#[derive(Debug)]
+struct StdoutInfo {
+    size_in_bytes: usize,
+    volumes: usize,
+}
+
+/// Yes, it is sync, but why not clone it?
+#[derive(Debug, Clone)]
 pub struct WPassInstance {
     /// Possible passwords
     password_dict: PasswordDict,
@@ -29,22 +35,29 @@ impl WPassInstance {
         }
     }
 
-    fn try_password(&self, target: &PathBuf, password: &str) -> Result<bool> {
+    fn try_password(&self, target: &PathBuf, password: &str) -> Result<(String, bool)> {
         let mut command = Command::new(&self.executable_path);
         command.arg("t");
         command.arg(format!("-p{}", password));
         command.arg(target);
-        Ok(parse_return_code(call_7z(&mut command)?))
+        let result = call_7z(&mut command)?;
+        Ok((result.0, parse_return_code(result.1)))
     }
 
-    fn extract(&self, target: &PathBuf, output: &PathBuf, password: &str) -> Result<bool> {
+    fn extract(
+        &self,
+        target: &PathBuf,
+        output: &PathBuf,
+        password: &str,
+    ) -> Result<(String, bool)> {
         let mut command = Command::new(&self.executable_path);
         command.arg("x");
         command.arg("-y");
         command.arg(format!("-p{}", password));
         command.arg(target);
         command.arg(format!("-o{}", output.to_str().unwrap()));
-        Ok(parse_return_code(call_7z(&mut command)?))
+        let result = call_7z(&mut command)?;
+        Ok((result.0, parse_return_code(result.1)))
     }
 }
 
@@ -54,33 +67,72 @@ impl WPass for WPassInstance {
         let archives = find_all_volumes(target);
         debug!("Archives: {:?}", archives);
         let target = archives.first().unwrap();
-        let password = self.password_dict.par_iter().find_any(|password| -> bool {
-            debug!("Trying password {}", password);
-            match self.try_password(&target, password) {
-                Ok(true) => {
-                    info!("Password is: {}", password);
-                    true
-                }
-                Ok(false) => false,
-                Err(e) => {
-                    debug!("Error occurs while extracting: {}", e);
-                    false
-                }
+        let test_result: crate::TestResult = self.test(target)?;
+        assert!(test_result.volumes == archives.len());
+        self.extract_with_password(target, output, &test_result.password)
+    }
+
+    fn extract_with_password(&self, target:&PathBuf, output:&PathBuf, password: &String) -> Result<Vec<PathBuf>> {
+        let archives = find_all_volumes(target);
+        debug!("Archives: {:?}", archives);
+        match self.extract(target, output, &password)?.1 {
+            true => {
+                info!("Successfully extracted");
+                Ok(archives)
             }
-        });
-        if let Some(password) = password {
-            match self.extract(target, output, password) {
-                Ok(true) => {
-                    info!("Successfully extracted");
-                    Ok(archives)
-                }
-                Ok(false) => Err(anyhow!("Cannot extract with correct password")),
-                Err(e) => Err(e),
-            }
-        } else {
-            Err(anyhow!("Cannot find correct password"))
+            false => Err(anyhow!("Cannot extract with correct password")),
         }
     }
+
+    fn test(&self, target: &PathBuf) -> Result<TestResult> {
+        let found = self
+            .password_dict
+            .par_iter()
+            .find_map_any(|password| {
+                debug!("Trying password {}", password);
+                match self.try_password(&target, password) {
+                    Ok((output, true)) => Some((password.clone(), output)),
+                    _ => None,
+                }
+            });
+        let (password, stdout) = found.ok_or(anyhow!(
+            "Cannot find correct password, and are you sure this is an archive?"
+        ))?;
+        let info = parse_stdout(&stdout)?;
+        Ok(TestResult {
+            password: password.clone(),
+            size_in_bytes: info.size_in_bytes,
+            volumes: info.volumes,
+        })
+    }
+}
+
+fn parse_stdout(stdout: &String) -> Result<StdoutInfo> {
+    // Total Physical Size = 48407393813
+    let total_size_regex = regex::Regex::new(r"Total Physical Size = (\d+)")?;
+    let size_regex = regex::Regex::new(r"Physical Size = (\d+)")?;
+    // Volumes = 3
+    let volume_regex = regex::Regex::new(r"Volumes = (\d+)")?;
+    let size = if let Some(capture) = total_size_regex.captures(stdout) {
+        capture.get(1).unwrap().as_str().parse()?
+    } else {
+        size_regex
+        .captures(stdout)
+        .ok_or(anyhow!("Cannot find size in stdout"))?
+        .get(1)
+        .unwrap()
+        .as_str()
+        .parse()?
+    };
+    let volumes = if let Some(capture) = volume_regex.captures(stdout) {
+        capture.get(1).unwrap().as_str().parse()?
+    } else {
+        1
+    };
+    Ok(StdoutInfo {
+        size_in_bytes: size,
+        volumes,
+    })
 }
 
 fn parse_return_code(code: ReturnCode) -> bool {
@@ -90,11 +142,11 @@ fn parse_return_code(code: ReturnCode) -> bool {
     }
 }
 
-fn call_7z(command: &mut Command) -> Result<ReturnCode> {
-    #[cfg(not(debug_assertions))]
+fn call_7z(command: &mut Command) -> Result<(String, ReturnCode)> {
+    #[cfg(feature = "silent")]
     command.creation_flags(CREATE_NO_WINDOW);
-    let output = command.output()?;
     debug!("args: {:?}", command.get_args().collect::<Vec<&OsStr>>());
+    let output = command.output().unwrap();
 
     // This is clearly not the best way to do this, I wonder if there's a way to change code page to 65001 on windows
     // Leave it as a TODO
@@ -113,11 +165,12 @@ fn call_7z(command: &mut Command) -> Result<ReturnCode> {
         log::debug!("Stdout: {}", stdout);
         log::debug!("Stderr: {}", stderr);
     }
-    match output.status.code() {
+    let code = match output.status.code() {
         Some(0) => Ok(ReturnCode::Success),
         Some(2) => Ok(ReturnCode::FatalError),
         _ => Err(anyhow!("Unknown return code from 7zip")),
-    }
+    }?;
+    Ok((stdout, code))
 }
 
 /// Surprisingly, after a thorough search, I cannot find a library to do one simple thing:
@@ -131,16 +184,18 @@ pub fn find_all_volumes(volume: &PathBuf) -> Vec<PathBuf> {
     let dir = volume.parent().unwrap();
     let base_name = volume.file_stem().unwrap();
     let files = std::fs::read_dir(dir).unwrap();
-    let mut result:Vec<_> = files.filter_map(|entry| {
-        if let Ok(entry) = entry {
-            // entry.metadata()
-            let path = entry.path();
-            if path.is_file() && path.file_stem().unwrap() == base_name {
-                return Some(path);
+    let mut result: Vec<_> = files
+        .filter_map(|entry| {
+            if let Ok(entry) = entry {
+                // entry.metadata()
+                let path = entry.path();
+                if path.is_file() && path.file_stem().unwrap() == base_name {
+                    return Some(path);
+                }
             }
-        }
-        None
-    }).collect();
+            None
+        })
+        .collect();
     result.sort();
     result
 }

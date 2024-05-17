@@ -40,8 +40,80 @@ pub fn generate_reg<P:AsRef<Path>>(file_to_write: P) -> () {
 "MUIVerb"="Extract to new directory and delete the archive file"
 
 [HKEY_CLASSES_ROOT\*\shell\WPass\shell\Item4\command]
-@="{path} -l -D -n \"%1\"""#,
-        path = std::env::current_exe().unwrap().to_str().unwrap()
+@="{path} -l -D -n \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass]
+"MUIVerb"="Extract with wpass"
+"SubCommands"=""
+"OnlyInBrowserWindow"=""
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item0]
+"MUIVerb"="Extract to current directory"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item0\command]
+@="{path} -l -r \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item1]
+"MUIVerb"="Extract to new directory"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item1\command]
+@="{path} -l -r -n \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item2]
+"MUIVerb"="Extract to current directory(with debug output)"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item2\command]
+@="{path} -n -r -d -l \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item3]
+"MUIVerb"="Extract to current directory and delete the archive file"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item3\command]
+@="{path} -l -r -D \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item4]
+"MUIVerb"="Extract to new directory and delete the archive file"
+
+[HKEY_CLASSES_ROOT\Directory\Background\shell\WPass\shell\Item4\command]
+@="{path} -l -r -D -n \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass]
+"MUIVerb"="Extract with wpass"
+"SubCommands"=""
+"OnlyInBrowserWindow"=""
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item0]
+"MUIVerb"="Extract to current directory"
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item0\command]
+@="{path} -l -r \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item1]
+"MUIVerb"="Extract to new directory"
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item1\command]
+@="{path} -l -r -n \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item2]
+"MUIVerb"="Extract to current directory(with debug output)"
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item2\command]
+@="{path} -n -r -d -l \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item3]
+"MUIVerb"="Extract to current directory and delete the archive file"
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item3\command]
+@="{path} -l -r -D \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item4]
+"MUIVerb"="Extract to new directory and delete the archive file"
+
+[HKEY_CLASSES_ROOT\Directory\shell\WPass\shell\Item4\command]
+@="{path} -l -r -D -n \"%1\""
+
+"#,
+        path = std::env::current_exe().unwrap().to_str().unwrap().escape_debug()
     );
     let mut reg_file = std::fs::File::create(file_to_write).expect("Failed to create reg file");
     reg_file

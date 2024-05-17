@@ -4,7 +4,7 @@ use anyhow::Result;
 pub type PasswordDict = Vec<String>;
 
 pub fn get_password(file_path: &PathBuf) -> Result<PasswordDict>{
-    let contents = fs::read_to_string(file_path)?;
+    let contents = fs::read_to_string(file_path).unwrap();
     let lines = contents.split("\n");
     let vec = lines.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect::<Vec<String>>();
     Ok(vec)
