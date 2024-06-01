@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["-l", "test/test.zip"],
+            "args": ["-l", "-D", "test/test.7z"],
             "cwd": "${workspaceFolder}"
         },
     ]

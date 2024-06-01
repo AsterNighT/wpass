@@ -2,14 +2,13 @@ mod fs;
 mod hack;
 mod runner;
 use std::path::PathBuf;
-use rayon::prelude::*;
+
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use config::Config;
 use log::{debug, LevelFilter};
-use runner::Archive;
 use serde::Deserialize;
-use wpass::{get_password, WPass, WPassInstance};
+use wpass::{get_password, WPassInstance};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -50,17 +49,13 @@ pub struct CmdArgument {
     #[clap(short = 'D', long)]
     delete: bool,
 
-    /// Generate reg file for windows context menu. With this option enabled the program will not try to extract file, but you still need to provide an arbitrary file name.
+    /// Generate reg file for windows context menu. With this option enabled the program will not try to extract file.
     #[clap(short, long)]
     generate: bool,
 
     /// Format the password file after everything. Sort passwords and deduplicate them. Enabled by default.
     #[clap(short, long)]
     format: bool,
-
-    /// Max RAM to use
-    #[clap(long, default_value = "0")]
-    ram: usize,
 
     /// Max parallel jobs
     #[clap(short, long, default_value = "0")]
@@ -83,9 +78,6 @@ pub struct CmdArgumentMerged {
 
     /// Extract to the same directory of archive file, overwrites the -o option
     local: bool,
-
-    /// Max RAM to use
-    max_ram: usize,
 
     /// Max parallel jobs
     max_thread: usize,
@@ -130,7 +122,7 @@ async fn main() -> Result<()> {
     check_args(&args).unwrap();
     if args.generate {
         if cfg!(windows) {
-            hack::generate_reg("wpass.reg");
+            hack::generate_reg(args.file_path);
             return Ok(());
         } else {
             return Err(anyhow!("Register is only available on Windows"));
@@ -138,22 +130,7 @@ async fn main() -> Result<()> {
     }
 
     let (merged_args, wpass_instance) = initialize(args, config).unwrap();
-    let files = fs::get_all_files_from_directory(&merged_args.file_path).unwrap()
-        .par_iter()
-        .filter_map(|e| {
-            let result = wpass_instance.test(e);
-            debug!("Test result: {:?}", result);
-            if let Ok(info) = result {
-                Some(Archive {
-                    path: e.clone(),
-                    password: info.password.clone(),
-                    size: info.size_in_bytes,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
+    let files = fs::get_all_files_from_directory(&merged_args.file_path).unwrap();
 
     debug!("Files: {:?}", files);
 
@@ -219,12 +196,6 @@ pub fn initialize(
         debug: options.debug,
         delete: options.delete,
         format: options.format,
-        max_ram: if options.ram == 0 {
-            // 8GB
-            1024 * 1024 * 1024 * 64
-        } else {
-            options.ram
-        },
         max_thread: if options.jobs == 0 {
             16
         } else {

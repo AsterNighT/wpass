@@ -1,6 +1,6 @@
-use std::{ffi::OsStr, os::windows::process::CommandExt, path::PathBuf, process::Command};
+use std::{ffi::OsStr, path::PathBuf, process::Command};
 
-use crate::{password::PasswordDict, TestResult, WPass};
+use crate::{parse_stdout, password::PasswordDict, TestResult, WPass};
 use anyhow::{anyhow, Result};
 use encoding::{all::GBK, decode, DecoderTrap};
 use log::{debug, info};
@@ -11,12 +11,6 @@ enum ReturnCode {
     Success = 0,
     FatalError = 2,
 }
-
-struct StdoutInfo {
-    size_in_bytes: usize,
-    volumes: usize,
-}
-
 /// Yes, it is sync, but why not clone it?
 #[derive(Debug, Clone)]
 pub struct WPassInstance {
@@ -53,6 +47,7 @@ impl WPassInstance {
         let mut command = Command::new(&self.executable_path);
         command.arg("x");
         command.arg("-y");
+        command.arg("-aou");
         command.arg(format!("-p{}", password));
         command.arg(target);
         command.arg(format!("-o{}", output.to_str().unwrap()));
@@ -62,7 +57,7 @@ impl WPassInstance {
 }
 
 impl WPass for WPassInstance {
-    fn try_extract(&self, target: &PathBuf, output: &PathBuf) -> Result<Vec<PathBuf>> {
+    fn try_extract(&self, target: &PathBuf, output: &PathBuf) -> Result<(String, Vec<PathBuf>)> {
         debug!("Password list: {:?}", self.password_dict);
         let archives = find_all_volumes(target);
         debug!("Archives: {:?}", archives);
@@ -72,29 +67,53 @@ impl WPass for WPassInstance {
         self.extract_with_password(target, output, &test_result.password)
     }
 
-    fn extract_with_password(&self, target:&PathBuf, output:&PathBuf, password: &String) -> Result<Vec<PathBuf>> {
+    fn extract_with_password(
+        &self,
+        target: &PathBuf,
+        output: &PathBuf,
+        password: &String,
+    ) -> Result<(String, Vec<PathBuf>)> {
         let archives = find_all_volumes(target);
         debug!("Archives: {:?}", archives);
-        match self.extract(target, output, &password)?.1 {
-            true => {
-                info!("Successfully extracted");
-                Ok(archives)
+        if let (output, true) = self.extract(target, output, &password)? {
+            info!("Successfully extracted");
+            Ok((output, archives))
+        } else {
+            Err(anyhow!("Cannot extract with correct password"))
+        }
+    }
+
+    fn extract_blindly(
+        &self,
+        target: &PathBuf,
+        output: &PathBuf,
+    ) -> Result<(String, Vec<PathBuf>)> {
+        let archives = find_all_volumes(target);
+        let found = self.password_dict.iter().find_map(|password| {
+            debug!("Trying password {}", password);
+            match self.extract(&target, output, password) {
+                Ok((output, true)) => Some((password.clone(), output)),
+                _ => None,
             }
-            false => Err(anyhow!("Cannot extract with correct password")),
+        });
+        if let Some((_, output)) = found {
+            info!("Successfully extracted");
+            Ok((output, archives))
+        } else {
+            Err(anyhow!(
+                "Cannot find correct password, and are you sure this is an archive?"
+            ))
         }
     }
 
     fn test(&self, target: &PathBuf) -> Result<TestResult> {
-        let found = self
-            .password_dict
-            .par_iter()
-            .find_map_any(|password| {
-                debug!("Trying password {}", password);
-                match self.try_password(&target, password) {
-                    Ok((output, true)) => Some((password.clone(), output)),
-                    _ => None,
-                }
-            });
+        let found = self.password_dict.par_iter().find_map_any(|password| {
+            debug!("Trying password {}", password);
+            match self.try_password(&target, password) {
+                Ok((output, true)) => Some((password.clone(), output)),
+                _ => None,
+            }
+        });
         let (password, stdout) = found.ok_or(anyhow!(
             "Cannot find correct password, and are you sure this is an archive?"
         ))?;
@@ -107,33 +126,7 @@ impl WPass for WPassInstance {
     }
 }
 
-fn parse_stdout(stdout: &String) -> Result<StdoutInfo> {
-    // Total Physical Size = 48407393813
-    let total_size_regex = regex::Regex::new(r"Total Physical Size = (\d+)")?;
-    let size_regex = regex::Regex::new(r"Physical Size = (\d+)")?;
-    // Volumes = 3
-    let volume_regex = regex::Regex::new(r"Volumes = (\d+)")?;
-    let size = if let Some(capture) = total_size_regex.captures(stdout) {
-        capture.get(1).unwrap().as_str().parse()?
-    } else {
-        size_regex
-        .captures(stdout)
-        .ok_or(anyhow!("Cannot find size in stdout"))?
-        .get(1)
-        .unwrap()
-        .as_str()
-        .parse()?
-    };
-    let volumes = if let Some(capture) = volume_regex.captures(stdout) {
-        capture.get(1).unwrap().as_str().parse()?
-    } else {
-        1
-    };
-    Ok(StdoutInfo {
-        size_in_bytes: size,
-        volumes,
-    })
-}
+
 
 fn parse_return_code(code: ReturnCode) -> bool {
     match code {
@@ -159,11 +152,11 @@ fn call_7z(command: &mut Command) -> Result<(String, ReturnCode)> {
     // GBK.decode_to(&output.stderr, DecoderTrap::Replace, &mut stderr)
     //     .unwrap();
     if output.status.code() != Some(0) {
-        log::error!("Stdout: {}", stdout);
-        log::error!("Stderr: {}", stderr);
-    } else {
         log::debug!("Stdout: {}", stdout);
         log::debug!("Stderr: {}", stderr);
+    } else {
+        log::info!("Stdout: {}", stdout);
+        log::info!("Stderr: {}", stderr);
     }
     let code = match output.status.code() {
         Some(0) => Ok(ReturnCode::Success),
