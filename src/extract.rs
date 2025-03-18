@@ -47,7 +47,7 @@ impl WPassInstance {
         let mut command = Command::new(&self.executable_path);
         command.arg("x");
         command.arg("-y");
-        command.arg("-aou");
+        // command.arg("-aou"); No, this rename cause problem, it will not delete the garbage files generated with wrong passwords.
         command.arg(format!("-p{}", password));
         command.arg(target);
         command.arg(format!("-o{}", output.to_str().unwrap()));
@@ -151,6 +151,7 @@ fn call_7z(command: &mut Command) -> Result<(String, ReturnCode)> {
     //     .unwrap();
     // GBK.decode_to(&output.stderr, DecoderTrap::Replace, &mut stderr)
     //     .unwrap();
+    debug!("Return code: {:?}", output.status.code());
     if output.status.code() != Some(0) {
         log::debug!("Stdout: {}", stdout);
         log::debug!("Stderr: {}", stderr);
